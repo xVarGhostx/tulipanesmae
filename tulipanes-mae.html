@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Para Mae 🌷</title>
+  <style>
+    :root { --bg1:#fff7fb; --bg2:#ffeef6; --accent:#e94b77; }
+    html,body {height:100%;margin:0;font-family: 'Segoe UI', system-ui, Arial; background: linear-gradient(180deg,var(--bg1),var(--bg2));}
+    #canvas {display:block;width:100vw;height:100vh;}
+    .overlay {position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+    .card {pointer-events:auto; background:rgba(255,255,255,0.95); padding:22px 28px; border-radius:16px; box-shadow:0 8px 30px rgba(0,0,0,0.12); text-align:center;}
+    h1 {margin:0 0 8px 0;color:#b3004d}
+    p {margin:0 0 12px 0;color:#333}
+    .btn {background:var(--accent); color:#fff; padding:12px 22px; border-radius:30px; border:none; cursor:pointer; font-weight:700; font-size:16px}
+    #finalScreen {display:none; flex-direction:column; align-items:center; gap:12px;}
+    #finalImg {max-width:220px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.14); display:none;}
+    #finalText {display:none;}
+    #replay {background:#ffbfd0; border:none; padding:10px 18px; border-radius:10px; cursor:pointer; font-weight:700; display:none;}
+    @media (max-width:520px){
+      .card {width:92vw;padding:18px}
+      h1{font-size:18px}
+      .btn{padding:10px 16px;font-size:15px}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div class="overlay" id="overlayIntro" style="pointer-events:auto;">
+    <div class="card" id="startCard">
+      <h1>Hola Mae 🌸</h1>
+      <p>Soy Vargus, pasaba por aquí para dedicarte esto sisi</p>
+      <button id="startBtn" class="btn">🌷 Presiona aquí</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlayFinal" style="display:none; pointer-events:auto;">
+    <div class="card" id="finalScreen">
+      <div id="finalText" style="font-size:18px; color:#5b2360; font-weight:700;">Espero te haya gustado, bais 💜</div>
+      <img id="finalImg" src="perrito.jpg" alt="Tulipán">
+      <button id="replay">🔁 Volver a verlo</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const overlayIntro = document.getElementById('overlayIntro');
+  const overlayFinal = document.getElementById('overlayFinal');
+  const startBtn = document.getElementById('startBtn');
+  const replayBtn = document.getElementById('replay');
+  const finalScreen = document.getElementById('finalScreen');
+  const finalText = document.getElementById('finalText');
+  const finalImg = document.getElementById('finalImg');
+
+  let W = canvas.width = innerWidth;
+  let H = canvas.height = innerHeight;
+
+  window.addEventListener('resize', () => {
+    W = canvas.width = innerWidth;
+    H = canvas.height = innerHeight;
+  });
+
+  // --- Tulip drawing + class ---
+  function drawTulipAt(ctx, x, y, scale=1, angle=0, color='#e63946') {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#2b7a3a';
+    ctx.lineWidth = 2;
+    ctx.moveTo(0, 6);
+    ctx.lineTo(0, 32);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.fillStyle = '#2f8b45';
+    ctx.ellipse(-6, 22, 6, 3.2, -0.6, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.quadraticCurveTo(-12,-10,-6,-20);
+    ctx.quadraticCurveTo(-2,-14,0,-18);
+    ctx.quadraticCurveTo(2,-14,6,-20);
+    ctx.quadraticCurveTo(12,-10,0,0);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(-6,-20,6,0);
+    g.addColorStop(0,'#ff9cc4');
+    g.addColorStop(0.4,color);
+    g.addColorStop(1,'#ff6a9a');
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(-2,-14,2.5,5, -0.5, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  class Tulip {
+    constructor(x,y,opts={}) {
+      this.x = x;
+      this.y = y;
+      this.vx = (Math.random()*1-0.5);
+      this.vy = 1 + Math.random()*2;
+      this.scale = 0.9 + Math.random()*0.5;
+      this.angle = (Math.random()-0.5)*0.2;
+      this.angularVel = (Math.random()-0.5)*0.02;
+      this.color = opts.color || '#e63946';
+      this.state = 'falling';
+      this.targetX = null;
+      this.targetY = null;
+      this.startX = null; this.startY = null;
+      this.startTime = 0;
+      this.duration = 1000;
+      this.easeFn = t => (--t)*t*t+1;
+    }
+    setTarget(tx,ty,now,duration=1000){
+      this.state = 'toTarget';
+      this.targetX = tx; this.targetY = ty;
+      this.startX = this.x; this.startY = this.y;
+      this.startTime = now;
+      this.duration = duration;
+      this.angularVel = (Math.random()-0.5)*0.02;
+    }
+    drop(){
+      this.state = 'drop';
+      this.vx = (Math.random()*2-1.2);
+      this.vy = 2 + Math.random()*3;
+      this.angularVel = (Math.random()-0.5)*0.08;
+    }
+    update(dt, now){
+      if(this.state === 'toTarget'){
+        const p = Math.min(1, (now - this.startTime)/this.duration);
+        const e = this.easeFn(p);
+        this.x = this.startX + (this.targetX - this.startX)*e;
+        this.y = this.startY + (this.targetY - this.startY)*e;
+        this.angle += this.angularVel;
+        if(p >= 1){ this.state = 'idle'; this.vx = 0; this.vy = 0.2; }
+      } else if(this.state === 'idle'){
+        this.x += Math.sin(now*0.002 + this.x*0.01)*0.2;
+        this.angle += Math.sin(now*0.001 + this.x*0.01)*0.003;
+      } else {
+        this.vy += 0.06;
+        this.x += this.vx + Math.sin(now*0.001 + this.x*0.01)*0.3;
+        this.y += this.vy;
+        this.angle += this.angularVel;
+      }
+    }
+    draw(ctx){
+      drawTulipAt(ctx, this.x, this.y, this.scale, this.angle, this.color);
+    }
+  }
+
+  let tulips = [];
+  let animId = null;
+  let phase = 'idle';
+  const colors = ['#e63946','#f72585','#ff4da6','#ff6a8a','#ff477e'];
+
+  function clearTulips(){ tulips = []; }
+
+  function startInitialRain(){
+    clearTulips();
+    const N = Math.max(70, Math.floor((W*H)/(8000)));
+    for(let i=0;i<N;i++){
+      const x = Math.random()*W;
+      const y = Math.random()*-H;
+      const t = new Tulip(x,y,{color:colors[Math.floor(Math.random()*colors.length)]});
+      t.state = 'falling';
+      tulips.push(t);
+    }
+    phase = 'rainingInitial';
+  }
+
+  function getTextPoints(text='MAE', maxPoints=420){
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const octx = off.getContext('2d');
+    const fontSize = Math.round(Math.min( W/3.5, H/3.2 ));
+    octx.clearRect(0,0,W,H);
+    octx.fillStyle = '#000';
+    octx.font = `bold ${fontSize}px Georgia, serif`;
+    octx.textBaseline = 'middle';
+    octx.textAlign = 'center';
+    octx.fillText(text, W/2, H/2);
+
+    const step = Math.max(6, Math.floor(W/150));
+    const points = [];
+    const img = octx.getImageData(0,0,W,H).data;
+    for(let y=Math.floor(H*0.22); y<Math.floor(H*0.78); y+=step){
+      for(let x=Math.floor(W*0.08); x<Math.floor(W*0.92); x+=step){
+        const idx = (y*W + x)*4 + 3;
+        if(img[idx] > 128) points.push({x,y});
+      }
+    }
+    for (let i = points.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [points[i], points[j]] = [points[j], points[i]];
+    }
+    return points.slice(0, Math.min(maxPoints, points.length));
+  }
+
+  function formMAE(){
+    phase = 'forming';
+    const points = getTextPoints('MAE', 420);
+    const now = performance.now();
+    if(tulips.length < points.length){
+      const need = points.length - tulips.length;
+      for(let i=0;i<need;i++){
+        const t = new Tulip(Math.random()*W, Math.random()*-H, {color: colors[Math.floor(Math.random()*colors.length)]});
+        tulips.push(t);
+      }
+    }
+    for(let i=0;i<points.length;i++){
+      const p = points[i];
+      const t = tulips[i];
+      t.setTarget(p.x + (Math.random()*6-3), p.y + (Math.random()*6-3), now, 900 + Math.random()*700);
+      t.color = colors[Math.floor(Math.random()*colors.length)];
+    }
+    for(let i=points.length;i<tulips.length;i++){
+      tulips[i].state = 'falling';
+      tulips[i].vy = 0.5 + Math.random()*1.5;
+      tulips[i].x = Math.random()*W;
+      tulips[i].y = Math.random()*-H*0.3;
+    }
+    setTimeout(()=>{ phase = 'formed'; }, 1400);
+  }
+
+  function dropAll(){
+    phase = 'dropping';
+    tulips.forEach(t => {
+      t.drop();
+      t.vy = 2 + Math.random()*2.5;
+      t.vx = (Math.random()*2 - 1.0);
+    });
+  }
+
+  let lastTime = performance.now();
+  function loop(now){
+    const dt = now - lastTime;
+    lastTime = now;
+    ctx.clearRect(0,0,W,H);
+
+    const bg = ctx.createLinearGradient(0,0,0,H);
+    bg.addColorStop(0,'rgba(255,250,253,0.6)');
+    bg.addColorStop(1,'rgba(255,240,247,0.9)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,W,H);
+
+    for(let i = 0; i < tulips.length; i++){
+      const t = tulips[i];
+      t.update(dt, now);
+      t.draw(ctx);
+    }
+
+    if(phase === 'dropping'){
+      const alive = tulips.filter(t => t.y < H + 60).length;
+      if(alive === 0){
+        phase = 'final';
+        setTimeout(() => {
+          overlayFinal.style.display = 'flex';
+          finalScreen.style.display = 'flex';
+          finalText.style.display = 'block';
+          finalImg.style.display = 'block';
+          replayBtn.style.display = 'inline-block';
+        }, 400);
+      }
+    }
+
+    animId = requestAnimationFrame(loop);
+  }
+
+  function startSequence(){
+    overlayIntro.style.display = 'none';
+    overlayFinal.style.display = 'none';
+    finalText.style.display = 'none';
+    finalImg.style.display = 'none';
+    replayBtn.style.display = 'none';
+    clearTulips();
+    startInitialRain();
+    if(!animId) { lastTime = performance.now(); animId = requestAnimationFrame(loop); }
+
+    setTimeout(() => {
+      formMAE();
+      setTimeout(()=> {
+        dropAll();
+      }, 3600);
+    }, 3600);
+  }
+
+  function resetAll(){
+    overlayFinal.style.display = 'none';
+    clearTulips();
+    overlayIntro.style.display = 'flex';
+  }
+
+  startBtn.addEventListener('click', () => startSequence());
+  replayBtn.addEventListener('click', () => {
+    resetAll();
+    setTimeout(()=> startSequence(), 220);
+  });
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = 'rgba(0,0,0,0.04)';
+  ctx.font = 'bold 80px Georgia';
+  ctx.textAlign = 'center';
+  ctx.fillText('MAE', W/2, H/2);
+})();
+</script>
+</body>
+</html>
